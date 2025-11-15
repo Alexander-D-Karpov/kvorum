@@ -37,6 +37,7 @@ func NewRouter(h *handlers.Handlers, m *middleware.Middleware) *Router {
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Post("/webhook/max", h.HandleMaxWebhook)
 
+		r.Post("/auth/max/webapp", h.ExchangeWebAppData)
 		r.Post("/auth/max/exchange", h.ExchangeDeepLinkToken)
 		r.Post("/auth/logout", m.RequireAuth(h.Logout))
 		r.Get("/me", m.RequireAuth(h.GetMe))
@@ -63,6 +64,11 @@ func NewRouter(h *handlers.Handlers, m *middleware.Middleware) *Router {
 			r.Route("/{id}/polls", func(r chi.Router) {
 				r.Get("/", h.GetEventPolls)
 				r.Post("/", m.RequireAuth(h.CreatePoll))
+			})
+
+			r.Route("/{id}/campaigns", func(r chi.Router) {
+				r.Get("/", m.RequireAuth(h.GetCampaigns))
+				r.Post("/", m.RequireAuth(h.CreateCampaign))
 			})
 
 			r.Get("/{id}/ics", h.GetEventICS)

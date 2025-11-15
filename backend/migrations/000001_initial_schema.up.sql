@@ -111,7 +111,8 @@ CREATE TABLE IF NOT EXISTS waitlist (
 CREATE TABLE IF NOT EXISTS campaigns (
                                          id UUID PRIMARY KEY,
                                          event_id UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
-                                         segment JSONB,
+                                         name TEXT NOT NULL,
+                                         segment TEXT NOT NULL,
                                          content JSONB NOT NULL,
                                          schedule_at TIMESTAMPTZ,
                                          status TEXT NOT NULL DEFAULT 'pending',

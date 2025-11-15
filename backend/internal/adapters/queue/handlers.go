@@ -10,6 +10,7 @@ import (
 	"github.com/Alexander-D-Karpov/kvorum/internal/adapters/botmax"
 	"github.com/Alexander-D-Karpov/kvorum/internal/domain/shared"
 	"github.com/hibiken/asynq"
+	maxbotapi "github.com/max-messenger/max-bot-api-client-go"
 )
 
 type Event struct {
@@ -36,12 +37,12 @@ type RegistrationGetter interface {
 }
 
 type TaskHandlers struct {
-	botClient   *botmax.Client
+	botClient   *maxbotapi.Api
 	eventGetter EventGetter
 	regGetter   RegistrationGetter
 }
 
-func NewTaskHandlers(botClient *botmax.Client, eventGetter EventGetter, regGetter RegistrationGetter) *TaskHandlers {
+func NewTaskHandlers(botClient *maxbotapi.Api, eventGetter EventGetter, regGetter RegistrationGetter) *TaskHandlers {
 	return &TaskHandlers{
 		botClient:   botClient,
 		eventGetter: eventGetter,
@@ -63,6 +64,11 @@ func (h *TaskHandlers) HandleReminder(ctx context.Context, task *asynq.Task) err
 
 	log.Printf("Processing reminder: event=%s, before=%s", payload.EventID, payload.Before)
 
+	if h.eventGetter == nil || h.regGetter == nil {
+		log.Println("EventGetter or RegistrationGetter not set, skipping")
+		return nil
+	}
+
 	event, err := h.eventGetter.GetEvent(ctx, payload.EventID)
 	if err != nil {
 		return fmt.Errorf("get event: %w", err)
@@ -73,7 +79,7 @@ func (h *TaskHandlers) HandleReminder(ctx context.Context, task *asynq.Task) err
 		return fmt.Errorf("get registrations: %w", err)
 	}
 
-	msg := botmax.BuildReminderMessage(&botmax.EventForReminder{
+	eventForReminder := &botmax.EventForReminder{
 		ID:          event.ID,
 		Title:       event.Title,
 		Description: event.Description,
@@ -81,7 +87,9 @@ func (h *TaskHandlers) HandleReminder(ctx context.Context, task *asynq.Task) err
 		Timezone:    event.Timezone,
 		Location:    event.Location,
 		OnlineURL:   event.OnlineURL,
-	}, payload.Before)
+	}
+
+	components := botmax.BuildReminderMessageComponents(h.botClient, eventForReminder, payload.Before)
 
 	var successCount, errorCount int
 	for _, reg := range regs {
@@ -89,7 +97,13 @@ func (h *TaskHandlers) HandleReminder(ctx context.Context, task *asynq.Task) err
 			continue
 		}
 
-		_, err := h.botClient.SendMessage(ctx, reg.ChatID, msg)
+		msg := maxbotapi.NewMessage().
+			SetChat(reg.ChatID).
+			SetText(components.Text).
+			SetFormat("markdown").
+			AddKeyboard(components.Keyboard)
+
+		_, err := h.botClient.Messages.Send(ctx, msg)
 		if err != nil {
 			log.Printf("Failed to send reminder to user %s: %v", reg.UserID, err)
 			errorCount++

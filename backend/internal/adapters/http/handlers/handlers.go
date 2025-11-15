@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/Alexander-D-Karpov/kvorum/internal/adapters/botmax"
+	"github.com/Alexander-D-Karpov/kvorum/internal/app/analytics"
+	"github.com/Alexander-D-Karpov/kvorum/internal/app/campaigns"
 	"github.com/Alexander-D-Karpov/kvorum/internal/app/checkin"
 	"github.com/Alexander-D-Karpov/kvorum/internal/app/events"
 	"github.com/Alexander-D-Karpov/kvorum/internal/app/forms"
@@ -22,31 +24,43 @@ type Cache interface {
 	DeleteSession(ctx context.Context, sessionID string) error
 }
 
+type PollsService interface {
+	CreatePoll(ctx context.Context, eventID shared.ID, question string, options json.RawMessage, pollType interface{}) (interface{}, error)
+	Vote(ctx context.Context, pollID, userID shared.ID, optionKey string) error
+	GetResults(ctx context.Context, pollID shared.ID) (map[string]int, error)
+	GetPollsByEvent(ctx context.Context, eventID shared.ID) (interface{}, error)
+}
+
+type CalendarService interface {
+	GenerateEventICS(ctx context.Context, eventID shared.ID) ([]byte, error)
+	GenerateUserICS(ctx context.Context, userID shared.ID) ([]byte, error)
+	GetGoogleCalendarLink(ctx context.Context, eventID shared.ID) (string, error)
+}
+
+type AnalyticsService interface {
+	GetEventAnalytics(ctx context.Context, eventID shared.ID, from, to time.Time) (*analytics.EventAnalytics, error)
+	ExportEventAnalyticsCSV(ctx context.Context, eventID shared.ID, from, to time.Time) ([]byte, error)
+}
+
+type CampaignsService interface {
+	CreateCampaign(ctx context.Context, eventID shared.ID, name, segment, channel, message string, scheduledAt *time.Time) (*campaigns.Campaign, error)
+	GetCampaigns(ctx context.Context, eventID shared.ID) ([]*campaigns.Campaign, error)
+}
+
 type Handlers struct {
 	identitySvc      *identity.Service
 	eventsSvc        *events.Service
 	formsSvc         *forms.Service
 	registrationsSvc *registrations.Service
 	checkinSvc       *checkin.Service
-	pollsSvc         interface {
-		CreatePoll(ctx context.Context, eventID shared.ID, question string, options json.RawMessage, pollType interface{}) (interface{}, error)
-		Vote(ctx context.Context, pollID, userID shared.ID, optionKey string) error
-		GetResults(ctx context.Context, pollID shared.ID) (map[string]int, error)
-		GetPollsByEvent(ctx context.Context, eventID shared.ID) (interface{}, error)
-	}
-	calendarSvc interface {
-		GenerateEventICS(ctx context.Context, eventID shared.ID) ([]byte, error)
-		GenerateUserICS(ctx context.Context, userID shared.ID) ([]byte, error)
-		GetGoogleCalendarLink(ctx context.Context, eventID shared.ID) (string, error)
-	}
-	analyticsSvc interface {
-		GetEventAnalytics(ctx context.Context, eventID shared.ID, from, to time.Time) (interface{}, error)
-		ExportEventAnalyticsCSV(ctx context.Context, eventID shared.ID, from, to time.Time) ([]byte, error)
-	}
-	botClient     *botmax.Client
-	cache         Cache
-	webhookSecret string
-	hmacSecret    string
+	pollsSvc         PollsService
+	calendarSvc      CalendarService
+	analyticsSvc     AnalyticsService
+	campaignsSvc     CampaignsService
+	botClient        *botmax.Client
+	cache            Cache
+	webhookSecret    string
+	hmacSecret       string
 }
 
 func NewHandlers(
@@ -55,21 +69,10 @@ func NewHandlers(
 	formsSvc *forms.Service,
 	registrationsSvc *registrations.Service,
 	checkinSvc *checkin.Service,
-	pollsSvc interface {
-		CreatePoll(ctx context.Context, eventID shared.ID, question string, options json.RawMessage, pollType interface{}) (interface{}, error)
-		Vote(ctx context.Context, pollID, userID shared.ID, optionKey string) error
-		GetResults(ctx context.Context, pollID shared.ID) (map[string]int, error)
-		GetPollsByEvent(ctx context.Context, eventID shared.ID) (interface{}, error)
-	},
-	calendarSvc interface {
-		GenerateEventICS(ctx context.Context, eventID shared.ID) ([]byte, error)
-		GenerateUserICS(ctx context.Context, userID shared.ID) ([]byte, error)
-		GetGoogleCalendarLink(ctx context.Context, eventID shared.ID) (string, error)
-	},
-	analyticsSvc interface {
-		GetEventAnalytics(ctx context.Context, eventID shared.ID, from, to time.Time) (interface{}, error)
-		ExportEventAnalyticsCSV(ctx context.Context, eventID shared.ID, from, to time.Time) ([]byte, error)
-	},
+	pollsSvc PollsService,
+	calendarSvc CalendarService,
+	analyticsSvc AnalyticsService,
+	campaignsSvc CampaignsService,
 	botClient *botmax.Client,
 	cache Cache,
 	webhookSecret string,
@@ -84,6 +87,7 @@ func NewHandlers(
 		pollsSvc:         pollsSvc,
 		calendarSvc:      calendarSvc,
 		analyticsSvc:     analyticsSvc,
+		campaignsSvc:     campaignsSvc,
 		botClient:        botClient,
 		cache:            cache,
 		webhookSecret:    webhookSecret,

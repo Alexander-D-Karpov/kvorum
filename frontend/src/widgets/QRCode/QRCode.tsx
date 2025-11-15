@@ -1,6 +1,6 @@
-import { useQRToken } from '@/entities/checkin/api'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useEffect, useRef } from 'react'
+import { useTicketQRCode } from '@/entities/checkin/api'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import QRCodeStyling from 'qr-code-styling'
 
 interface Props {
@@ -8,7 +8,7 @@ interface Props {
 }
 
 export default function QRCode({ eventId }: Props) {
-    const { data: qrData, isLoading } = useQRToken(eventId)
+    const { data: qrData, isLoading } = useTicketQRCode(eventId)
     const ref = useRef<HTMLDivElement>(null)
 
     useEffect(() => {

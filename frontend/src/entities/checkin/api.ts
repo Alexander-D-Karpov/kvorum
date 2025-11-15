@@ -44,3 +44,11 @@ export function useTicketQRCode(eventId: string) {
         enabled: !!eventId,
     })
 }
+
+export function useQRToken(eventId: string) {
+    return useQuery({
+        queryKey: ['qr-token', eventId],
+        queryFn: () => fetcher<{ token: string }>(`/api/v1/tickets/${eventId}/qr`),
+        enabled: !!eventId,
+    })
+}

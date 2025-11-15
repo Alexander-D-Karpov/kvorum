@@ -1,7 +1,8 @@
-import { createContext, useContext, useMemo, ReactNode } from "react";
+import { createContext, useContext, useMemo, ReactNode, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { APIError } from "@/shared/api/fetcher";
 import { fetchCurrentUser, User } from "@/entities/user/api";
+import { getInitData, isMaxWebApp, ready } from "@/shared/lib/maxBridge";
 
 interface AuthContextValue {
     user: User | null;
@@ -13,6 +14,32 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+    const [initDataSent, setInitDataSent] = useState(false);
+
+    useEffect(() => {
+        if (isMaxWebApp()) {
+            ready();
+
+            const initData = getInitData();
+            if (initData && !initDataSent) {
+                fetch('/api/v1/auth/max/webapp', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    credentials: 'include',
+                    body: JSON.stringify({ initData }),
+                })
+                    .then(() => {
+                        setInitDataSent(true);
+                    })
+                    .catch((err) => {
+                        console.error('Failed to exchange webapp data:', err);
+                    });
+            }
+        }
+    }, [initDataSent]);
+
     const { data, isLoading } = useQuery({
         queryKey: ["me"],
         queryFn: async () => {
@@ -27,6 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
         },
         retry: false,
+        enabled: !isMaxWebApp() || initDataSent,
     });
 
     const value = useMemo<AuthContextValue>(() => {

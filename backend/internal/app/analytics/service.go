@@ -4,14 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/csv"
-	"errors"
 	"strconv"
 	"time"
 
 	"github.com/Alexander-D-Karpov/kvorum/internal/domain/shared"
 )
 
-// TODO
 type EventAnalytics struct {
 	EventID            shared.ID        `json:"event_id"`
 	PeriodFrom         time.Time        `json:"period_from"`
@@ -25,51 +23,38 @@ type EventAnalytics struct {
 	BySource           map[string]int64 `json:"by_source"`
 }
 
+type AnalyticsRepo interface {
+	GetEventAnalytics(ctx context.Context, eventID shared.ID, from, to time.Time) (*EventAnalytics, error)
+}
+
 type Service struct {
+	repo AnalyticsRepo
 }
 
-func NewService() *Service {
-	return &Service{}
+func NewService(repo AnalyticsRepo) *Service {
+	return &Service{repo: repo}
 }
 
-func (s *Service) GetEventAnalytics(ctx context.Context, eventID shared.ID, from, to time.Time) (interface{}, error) {
+func (s *Service) GetEventAnalytics(ctx context.Context, eventID shared.ID, from, to time.Time) (*EventAnalytics, error) {
 	now := time.Now().UTC()
 	if from.IsZero() || to.IsZero() || !from.Before(to) {
 		to = now
 		from = now.Add(-30 * 24 * time.Hour)
 	}
 
-	analytics := &EventAnalytics{
-		EventID:            eventID,
-		PeriodFrom:         from,
-		PeriodTo:           to,
-		TotalRegistrations: 0,
-		Going:              0,
-		NotGoing:           0,
-		Maybe:              0,
-		Waitlist:           0,
-		CheckedIn:          0,
-		BySource:           map[string]int64{},
-	}
-
-	return analytics, nil
+	return s.repo.GetEventAnalytics(ctx, eventID, from, to)
 }
 
 func (s *Service) ExportEventAnalyticsCSV(ctx context.Context, eventID shared.ID, from, to time.Time) ([]byte, error) {
-	data, err := s.GetEventAnalytics(ctx, eventID, from, to)
+	analytics, err := s.GetEventAnalytics(ctx, eventID, from, to)
 	if err != nil {
 		return nil, err
-	}
-
-	analytics, ok := data.(*EventAnalytics)
-	if !ok {
-		return nil, errors.New("invalid analytics type")
 	}
 
 	buf := &bytes.Buffer{}
 	writer := csv.NewWriter(buf)
 
-	_ = writer.Write([]string{
+	writer.Write([]string{
 		"event_id",
 		"period_from",
 		"period_to",
@@ -81,7 +66,7 @@ func (s *Service) ExportEventAnalyticsCSV(ctx context.Context, eventID shared.ID
 		"checked_in",
 	})
 
-	_ = writer.Write([]string{
+	writer.Write([]string{
 		analytics.EventID.String(),
 		analytics.PeriodFrom.Format(time.RFC3339),
 		analytics.PeriodTo.Format(time.RFC3339),
@@ -93,7 +78,13 @@ func (s *Service) ExportEventAnalyticsCSV(ctx context.Context, eventID shared.ID
 		strconv.Itoa(analytics.CheckedIn),
 	})
 
-	writer.Flush()
+	writer.Write([]string{})
+	writer.Write([]string{"Source", "Count"})
 
+	for source, count := range analytics.BySource {
+		writer.Write([]string{source, strconv.FormatInt(count, 10)})
+	}
+
+	writer.Flush()
 	return buf.Bytes(), writer.Error()
 }

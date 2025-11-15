@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -12,110 +11,56 @@ import (
 	"github.com/Alexander-D-Karpov/kvorum/internal/adapters/queue"
 	"github.com/Alexander-D-Karpov/kvorum/internal/adapters/repo"
 	"github.com/Alexander-D-Karpov/kvorum/internal/config"
-	"github.com/Alexander-D-Karpov/kvorum/internal/domain/shared"
+	"github.com/Alexander-D-Karpov/kvorum/internal/observ"
 	"github.com/hibiken/asynq"
+	"github.com/joho/godotenv"
 )
 
-type EventRepo struct {
-	db *repo.DB
-}
-
-func (r *EventRepo) GetEvent(ctx context.Context, eventID shared.ID) (queue.Event, error) {
-	query := `
-		SELECT id, title, description, starts_at, tz, location, online_url
-		FROM events
-		WHERE id = $1
-	`
-
-	var event queue.Event
-	err := r.db.Pool().QueryRow(ctx, query, eventID).Scan(
-		&event.ID,
-		&event.Title,
-		&event.Description,
-		&event.StartsAt,
-		&event.Timezone,
-		&event.Location,
-		&event.OnlineURL,
-	)
-
-	return event, err
-}
-
-type RegistrationRepo struct {
-	db *repo.DB
-}
-
-func (r *RegistrationRepo) GetUserRegistrations(ctx context.Context, eventID shared.ID) ([]queue.Registration, error) {
-	query := `
-		SELECT r.user_id, CAST(ui.provider_user_id AS BIGINT) as chat_id
-		FROM registrations r
-		JOIN user_identities ui ON ui.user_id = r.user_id AND ui.provider = 'max'
-		WHERE r.event_id = $1 AND r.status = 'going'
-	`
-
-	rows, err := r.db.Pool().Query(ctx, query, eventID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var result []queue.Registration
-	for rows.Next() {
-		var reg queue.Registration
-		if err := rows.Scan(&reg.UserID, &reg.ChatID); err != nil {
-			return nil, err
-		}
-		result = append(result, reg)
-	}
-
-	return result, rows.Err()
-}
-
 func main() {
+	_ = godotenv.Load()
+
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+		log.Fatal("Failed to load config:", err)
 	}
+
+	logger := observ.NewLogger()
+	logger.Info("Starting worker...")
 
 	ctx := context.Background()
 
 	db, err := repo.NewDB(ctx, cfg.Database.URL)
 	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
+		log.Fatal("Failed to connect to database:", err)
 	}
 	defer db.Close()
 
-	botClient := botmax.NewClient(cfg.Bot.Token)
-
-	webhookURL := fmt.Sprintf("%s/api/v1/webhook/max", cfg.Server.PublicURL)
-	log.Printf("Registering webhook: %s", webhookURL)
-
-	if cfg.Bot.Token != "" {
-		sub, err := botClient.Subscribe(ctx, webhookURL, cfg.Security.WebhookSecret)
-		if err != nil {
-			log.Printf("Warning: Failed to register webhook: %v", err)
-		} else {
-			log.Printf("Webhook registered: id=%s, active=%v", sub.ID, sub.IsActive)
-		}
-	}
-
-	eventRepo := &EventRepo{db: db}
-	regRepo := &RegistrationRepo{db: db}
-
-	srv, err := queue.NewAsynqServer(cfg.Redis.URL)
+	botClient, err := botmax.NewClient(cfg.Bot.Token)
 	if err != nil {
-		log.Fatalf("Failed to create asynq server: %v", err)
+		log.Fatal("Failed to create bot client:", err)
 	}
 
-	handlers := queue.NewTaskHandlers(botClient, eventRepo, regRepo)
+	botInfo, err := botClient.Bots.GetBot(ctx)
+	if err != nil {
+		log.Fatal("Failed to get bot info:", err)
+	}
+	log.Printf("Worker bot client initialized: %s (@%s)", botInfo.Name, botInfo.Username)
+
+	server, err := queue.NewAsynqServer(cfg.Redis.URL)
+	if err != nil {
+		log.Fatal("Failed to create worker server:", err)
+	}
+
+	handlers := queue.NewTaskHandlers(botClient.Api, nil, nil)
+
 	mux := asynq.NewServeMux()
 	mux.HandleFunc("reminder", handlers.HandleReminder)
 	mux.HandleFunc("campaign", handlers.HandleCampaign)
 
 	go func() {
-		log.Println("Starting worker...")
-		if err := srv.Start(mux); err != nil {
-			log.Fatalf("Worker error: %v", err)
+		logger.Info("Worker started")
+		if err := server.Start(mux); err != nil {
+			log.Fatal("Worker failed to start:", err)
 		}
 	}()
 
@@ -123,7 +68,7 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	log.Println("Shutting down worker...")
-	srv.Stop()
-	fmt.Println("Worker stopped")
+	logger.Info("Shutting down worker...")
+	server.Stop()
+	logger.Info("Worker stopped")
 }

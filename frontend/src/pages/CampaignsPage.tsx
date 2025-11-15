@@ -1,34 +1,18 @@
 import { useState } from "react";
 import { useParams } from "react-router-dom";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import fetcher from "@/shared/api/fetcher";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/use-toast";
-
-interface Campaign {
-    id: string;
-    name: string;
-    status: string;
-    scheduled_at?: string | null;
-    sent_at?: string | null;
-    channel: string;
-    segment: string;
-}
+import { useCampaigns, useCreateCampaign } from "@/entities/campaign/api";
 
 export default function CampaignsPage() {
     const { eventId } = useParams<{ eventId: string }>();
     const { toast } = useToast();
-    const queryClient = useQueryClient();
 
-    const { data: campaigns } = useQuery({
-        queryKey: ["campaigns", eventId],
-        queryFn: () =>
-            fetcher<Campaign[]>(`/api/v1/events/${eventId}/campaigns`),
-        enabled: !!eventId,
-    });
+    const { data: campaigns, isLoading } = useCampaigns(eventId || '');
+    const createMutation = useCreateCampaign(eventId || '');
 
     const [name, setName] = useState("");
     const [segment, setSegment] = useState("all");
@@ -36,28 +20,38 @@ export default function CampaignsPage() {
     const [message, setMessage] = useState("");
     const [scheduledAt, setScheduledAt] = useState("");
 
-    const createMutation = useMutation({
-        mutationFn: () =>
-            fetcher<Campaign>(`/api/v1/events/${eventId}/campaigns`, {
-                method: "POST",
-                body: JSON.stringify({
-                    name,
-                    segment,
-                    channel,
-                    message,
-                    scheduled_at: scheduledAt || null,
-                }),
-            }),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ["campaigns", eventId] });
+    const handleCreate = async () => {
+        if (!name.trim() || !message.trim()) {
+            toast({
+                title: "Ошибка",
+                description: "Заполните название и текст сообщения",
+                variant: "destructive",
+            });
+            return;
+        }
+
+        try {
+            await createMutation.mutateAsync({
+                name,
+                segment,
+                channel,
+                message,
+                scheduled_at: scheduledAt || undefined,
+            });
             setName("");
             setMessage("");
             setScheduledAt("");
             toast({
-                title: "Рассылка сохранена",
+                title: "Рассылка создана",
             });
-        },
-    });
+        } catch {
+            toast({
+                title: "Ошибка",
+                description: "Не удалось создать рассылку",
+                variant: "destructive",
+            });
+        }
+    };
 
     if (!eventId) {
         return (
@@ -120,14 +114,13 @@ export default function CampaignsPage() {
                         placeholder="Текст сообщения"
                         value={message}
                         onChange={(e) => setMessage(e.target.value)}
+                        rows={4}
                     />
                     <Button
-                        onClick={() => createMutation.mutate()}
-                        disabled={
-                            !name.trim() || !message.trim() || createMutation.isPending
-                        }
+                        onClick={handleCreate}
+                        disabled={createMutation.isPending}
                     >
-                        Сохранить кампанию
+                        Создать рассылку
                     </Button>
                 </CardContent>
             </Card>
@@ -137,10 +130,13 @@ export default function CampaignsPage() {
                     <CardTitle className="text-base">История рассылок</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-2 text-sm">
-                    {!campaigns || campaigns.length === 0 ? (
+                    {isLoading && (
+                        <div className="text-muted-foreground">Загрузка...</div>
+                    )}
+                    {!isLoading && (!campaigns || campaigns.length === 0) ? (
                         <div className="text-muted-foreground">Рассылок пока нет</div>
                     ) : (
-                        campaigns.map((c) => (
+                        campaigns?.map((c) => (
                             <div
                                 key={c.id}
                                 className="flex items-center justify-between border-b last:border-b-0 py-2"
@@ -154,9 +150,11 @@ export default function CampaignsPage() {
                                 <div className="text-xs text-muted-foreground text-right">
                                     <div>Статус: {c.status}</div>
                                     {c.scheduled_at && (
-                                        <div>Запланировано: {c.scheduled_at}</div>
+                                        <div>
+                                            Запланировано:{" "}
+                                            {new Date(c.scheduled_at).toLocaleString("ru-RU")}
+                                        </div>
                                     )}
-                                    {c.sent_at && <div>Отправлено: {c.sent_at}</div>}
                                 </div>
                             </div>
                         ))

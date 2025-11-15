@@ -35,12 +35,6 @@ type RedisConfig struct {
 	DialTimeout time.Duration
 }
 
-type BotConfig struct {
-	Token      string
-	APIURL     string
-	WebhookURL string
-}
-
 type SecurityConfig struct {
 	HMACSecret    string
 	WebhookSecret string
@@ -67,8 +61,9 @@ func Load() (*Config, error) {
 			DialTimeout: 5 * time.Second,
 		},
 		Bot: BotConfig{
-			Token:  getEnv("MAX_BOT_TOKEN", ""),
-			APIURL: "https://platform-api.max.ru",
+			Token:      getEnv("MAX_BOT_TOKEN", ""),
+			APIURL:     "https://platform-api.max.ru",
+			WebhookURL: getEnv("WEBHOOK_URL", ""),
 		},
 		Security: SecurityConfig{
 			HMACSecret:    getEnv("HMAC_SECRET", "change_this_secret_key"),

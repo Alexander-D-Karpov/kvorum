@@ -3,6 +3,7 @@ package calendar
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -59,23 +60,29 @@ func (s *Service) GetGoogleCalendarLink(ctx context.Context, eventID shared.ID) 
 
 	loc, _ := time.LoadLocation(event.Timezone)
 	start := event.StartsAt.In(loc).Format("20060102T150405")
-	end := event.EndsAt.In(loc).Format("20060102T150405")
+
+	var end string
+	if !event.EndsAt.IsZero() {
+		end = event.EndsAt.In(loc).Format("20060102T150405")
+	} else {
+		end = event.StartsAt.Add(time.Hour).In(loc).Format("20060102T150405")
+	}
 
 	details := event.Description
 	if event.OnlineURL != "" {
-		details += "\n\nСсылка: " + event.OnlineURL
+		details += "\n\nОнлайн-ссылка: " + event.OnlineURL
 	}
 
-	link := fmt.Sprintf(
-		"https://calendar.google.com/calendar/render?action=TEMPLATE&text=%s&dates=%s/%s&details=%s&location=%s",
-		escapeCalendarText(event.Title),
-		start,
-		end,
-		escapeCalendarText(details),
-		escapeCalendarText(event.Location),
-	)
+	params := url.Values{}
+	params.Set("action", "TEMPLATE")
+	params.Set("text", event.Title)
+	params.Set("dates", fmt.Sprintf("%s/%s", start, end))
+	params.Set("details", details)
+	if event.Location != "" {
+		params.Set("location", event.Location)
+	}
 
-	return link, nil
+	return "https://calendar.google.com/calendar/render?" + params.Encode(), nil
 }
 
 func generateICS(events []*Event) []byte {
@@ -88,7 +95,7 @@ func generateICS(events []*Event) []byte {
 
 	for _, event := range events {
 		sb.WriteString("BEGIN:VEVENT\r\n")
-		sb.WriteString(fmt.Sprintf("UID:%s\r\n", event.ID))
+		sb.WriteString(fmt.Sprintf("UID:%s@kvorum.app\r\n", event.ID))
 		sb.WriteString(fmt.Sprintf("DTSTAMP:%s\r\n", time.Now().UTC().Format("20060102T150405Z")))
 		sb.WriteString(fmt.Sprintf("DTSTART:%s\r\n", event.StartsAt.UTC().Format("20060102T150405Z")))
 
@@ -124,8 +131,4 @@ func escapeICSText(text string) string {
 	text = strings.ReplaceAll(text, ",", "\\,")
 	text = strings.ReplaceAll(text, "\n", "\\n")
 	return text
-}
-
-func escapeCalendarText(text string) string {
-	return strings.ReplaceAll(text, " ", "+")
 }

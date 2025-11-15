@@ -42,9 +42,8 @@ export default function RegistrationForm({
     } = useForm<FormValues>({ mode: "onBlur" });
 
     const [hiddenFields, setHiddenFields] = useState<Record<string, boolean>>({});
-    const [requiredOverrides, setRequiredOverrides] = useState<
-        Record<string, boolean>
-    >({});
+    const [requiredOverrides, setRequiredOverrides] =
+        useState<Record<string, boolean>>({});
     const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
 
     const fields = useMemo(() => form?.schema?.fields ?? [], [form]);
@@ -196,9 +195,9 @@ export default function RegistrationForm({
                                 className="h-4 w-4"
                             />
                             <span className="text-sm">
-                {field.label}
+                                {field.label}
                                 {required && <span className="text-red-500 ml-1">*</span>}
-              </span>
+                            </span>
                             {errors[field.id] && (
                                 <p className="text-xs text-red-500">Обязательно для продолжения</p>
                             )}
@@ -255,12 +254,12 @@ export default function RegistrationForm({
             <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
                 {lastSavedAt && (
                     <span>
-            Черновик сохранён в{" "}
+                        Черновик сохранён в{" "}
                         {lastSavedAt.toLocaleTimeString("ru-RU", {
                             hour: "2-digit",
                             minute: "2-digit",
                         })}
-          </span>
+                    </span>
                 )}
                 {saveDraft.isPending && <span>Сохранение черновика...</span>}
             </div>
