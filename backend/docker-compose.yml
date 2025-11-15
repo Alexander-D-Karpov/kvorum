@@ -1,0 +1,91 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: kvorum_postgres
+    environment:
+      POSTGRES_DB: kvorum
+      POSTGRES_USER: kvorum
+      POSTGRES_PASSWORD: kvorum
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kvorum"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: kvorum_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: api
+    container_name: kvorum_api
+    ports:
+      - "8080:8080"
+    environment:
+      - DATABASE_URL=postgres://kvorum:kvorum@postgres:5432/kvorum?sslmode=disable
+      - REDIS_URL=redis://redis:6379/0
+      - SERVER_PORT=8080
+      - PUBLIC_APP_URL=http://localhost:8080
+      - MAX_BOT_TOKEN=${MAX_BOT_TOKEN}
+      - HMAC_SECRET=${HMAC_SECRET:-change_this_secret_key}
+      - WEBHOOK_SECRET=${WEBHOOK_SECRET}
+      - LOG_LEVEL=info
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: worker
+    container_name: kvorum_worker
+    environment:
+      - DATABASE_URL=postgres://kvorum:kvorum@postgres:5432/kvorum?sslmode=disable
+      - REDIS_URL=redis://redis:6379/0
+      - MAX_BOT_TOKEN=${MAX_BOT_TOKEN}
+      - LOG_LEVEL=info
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  migrator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: migrator
+    container_name: kvorum_migrator
+    environment:
+      - DATABASE_URL=postgres://kvorum:kvorum@postgres:5432/kvorum?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["up"]
+
+volumes:
+  postgres_data:
+  redis_data:
